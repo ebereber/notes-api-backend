@@ -1,14 +1,17 @@
+require("dotenv").config()
+require("./mongo")
 const express = require("express")
 const app = express()
 const cors = require("cors")
 
+
+const Note = require("./models/Note")
+const notFound = require("./models/middleware/notFound")
+const handleErrors = require("./models/middleware/handleErrors")
+
 app.use(cors())
 app.use(express.json())
 
-let notes = [
-    {"id": 1, "content": "hacer la cama"},
-    {"id": 2, "content": "comer verduras"},
-]
 
 app.use((request, response,next) => {
     console.log(request.method);
@@ -22,23 +25,45 @@ app.get("/", (request, response) => {
 })
 
 app.get("/api/notes", (request, response) => {
-    response.json(notes)
-})
-
-app.get("/api/notes/:id", (request,response) => {
-    const id = Number(request.params.id)
-    const note = notes.find(note => note.id === id)
-    if(note){
-        response.json(note)
-    }else {
-        response.status(404).end()
-    }
+    Note.find({}).then(notes => {
+        response.json(notes)
+    })
     
 })
 
-app.delete("/api/notes/:id", (request, response) => {
-    const id = Number(request.params.id)
-    notes = notes.filter(note => note.id !== id)
+app.get("/api/notes/:id", (request,response, next) => {
+    const {id} = request.params
+    Note.findById(id).then(note => {
+        if(note){
+            response.json(note)
+        }else {
+            response.status(404).end()
+        }
+    }).catch(err => {
+        next(err)
+    })
+})
+
+app.put ("/api/notes/:id", (request, response, next) => {
+    const {id} = request.params
+    const note = request.body
+
+    const newNoteInfo = {
+        content: note.content,
+        important: note.important
+    }
+
+    Note.findOneAndUpdate(id, newNoteInfo, {new: true})
+    .then( result => {
+        response.json(result)
+    })
+})
+
+app.delete("/api/notes/:id", (request, response, next) => {
+    const {id} = request.params
+   Note.findByIdAndRemove(id).then(result => {
+       response.status(204).end()
+   }).catch(error => next(error))
     response.status(204).end()
 })
 
@@ -47,21 +72,20 @@ app.post("/api/notes", (request, response) => {
      if(!note || !note.content){
         return response.status(400).json({error: "note.content.dsnt exist"})
     }
-    const ids = notes.map(note => note.id)
-    const maxId = Math.max(...ids)
-    const newNote = {
-        id : maxId +1,
-        content: note.content
-    }
-    notes = [...notes, newNote] 
-    response.json(note)
-})
-
-app.use((request, response) => {
-    response.status(404).json({
-        error: "Not found"
+    
+    const newNote = new Note({
+        content: note.content,
+        date: new Date(),
+        important: note.important || false
+    })
+    newNote.save().then(savedNote => {
+        response.json(savedNote)
     })
 })
+
+ app.use(notFound)
+
+app.use(handleErrors)
 
 const PORT = process.env.PORT || 3001
 
